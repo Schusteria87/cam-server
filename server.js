@@ -1,35 +1,62 @@
 const express = require('express');
 const app = express();
 
-let lastFrame = null;
+app.use(express.json({ limit: '5mb' }));
 
-// RECEBE IMAGEM DA ESP32
-app.post('/upload/cam1', express.raw({ type: 'image/jpeg', limit: '5mb' }), (req, res) => {
-    lastFrame = req.body;
-    console.log("📸 Frame recebido:", req.body.length, "bytes");
+let frames = {
+    cam1: null,
+    cam2: null
+};
+
+// ================= RECEBER IMAGEM DA ESP =================
+app.post('/upload/:cam', (req, res) => {
+    const cam = req.params.cam;
+
+    if (!req.body.image) {
+        return res.sendStatus(400);
+    }
+
+    const img = Buffer.from(req.body.image, 'base64');
+    frames[cam] = img;
+
     res.sendStatus(200);
 });
 
-// RETORNA IMAGEM
-app.get('/cam1', (req, res) => {
-    if (!lastFrame) {
-        return res.send("Aguardando imagem...");
-    }
-    res.set('Content-Type', 'image/jpeg');
-    res.send(lastFrame);
+// ================= STREAM MJPEG =================
+app.get('/stream/:cam', (req, res) => {
+    const cam = req.params.cam;
+
+    res.writeHead(200, {
+        'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Pragma': 'no-cache'
+    });
+
+    const interval = setInterval(() => {
+        if (frames[cam]) {
+            res.write(`--frame\r\n`);
+            res.write(`Content-Type: image/jpeg\r\n\r\n`);
+            res.write(frames[cam]);
+            res.write(`\r\n`);
+        }
+    }, 100); // 10 FPS tentativa
+
+    req.on('close', () => {
+        clearInterval(interval);
+    });
 });
 
-// PÁGINA WEB (SIMULA STREAM)
+// ================= PÁGINA SIMPLES =================
 app.get('/', (req, res) => {
     res.send(`
-        <h2>Camera 1</h2>
-        <img id="cam" width="400"/>
-        <script>
-            setInterval(() => {
-                document.getElementById('cam').src = '/cam1?' + new Date().getTime();
-            }, 300);
-        </script>
+        <h1>Camera 1</h1>
+        <img src="/stream/cam1" width="400"/>
+        <h1>Camera 2</h1>
+        <img src="/stream/cam2" width="400"/>
     `);
 });
 
-app.listen(3000, () => console.log("🚀 Servidor rodando"));
+app.listen(3000, () => {
+    console.log("🚀 MJPEG server rodando");
+});
