@@ -27,7 +27,7 @@ app.get('/', (req, res) => {
         <script>
             setInterval(() => {
                 document.getElementById('cam').src = '/cam1?' + new Date().getTime();
-            }, 1000);
+            }, 300);
         </script>
     `);
 });
