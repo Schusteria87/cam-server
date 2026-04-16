@@ -11,13 +11,20 @@ const SAVE_INTERVAL = 5000;
 const FOLDER_ID = '1sfUnu5aBtu3U4tF-6gI51GMhyJauYDyn';
 
 // ================= GOOGLE DRIVE =================
-const auth = new google.auth.GoogleAuth({
-    keyFile: 'credentials.json',
-    scopes: ['https://www.googleapis.com/auth/drive']
+
+const { google } = require('googleapis');
+
+const auth = new google.auth.JWT(
+    process.env.GOOGLE_CLIENT_EMAIL,
+    null,
+    process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    ['https://www.googleapis.com/auth/drive']
+);
+
+const drive = google.drive({
+    version: 'v3',
+    auth
 });
-
-const drive = google.drive({ version: 'v3', auth });
-
 // ================= EXPRESS =================
 app.use(express.raw({ type: '*/*', limit: '5mb' }));
 
