@@ -1,68 +1,18 @@
+render  
+
 const express = require('express');
 const app = express();
-const fs = require('fs');
-const path = require('path');
-const { google } = require('googleapis');
 
-// ================= CONFIG =================
-const PORT = 3000;
-const SAVE_INTERVAL = 5000;
-const FOLDER_ID = '1sfUnu5aBtu3U4tF-6gI51GMhyJauYDyn';
-
-// ================= GOOGLE DRIVE =================
-const auth = new google.auth.GoogleAuth({
-    keyFile: 'credentials.json',
-    scopes: ['https://www.googleapis.com/auth/drive']
-});
-
-const drive = google.drive({
-    version: 'v3',
-    auth
-});
-// ================= EXPRESS =================
+// ACEITA BINÁRIO
 app.use(express.raw({ type: '*/*', limit: '5mb' }));
 
-// ================= ARMAZENAMENTO =================
 let frames = {
     cam1: { img: null, last: 0 },
     cam2: { img: null, last: 0 }
 };
 
-let lastSave = {
-    cam1: 0,
-    cam2: 0
-};
-
-// ================= UPLOAD DRIVE =================
-async function uploadToDrive(buffer, cam) {
-    try {
-        const filename = `cam_${cam}_${Date.now()}.jpg`;
-        const filepath = path.join(__dirname, filename);
-
-        fs.writeFileSync(filepath, buffer);
-
-        await drive.files.create({
-            requestBody: {
-                name: filename,
-                parents: [FOLDER_ID]
-            },
-            media: {
-                mimeType: 'image/jpeg',
-                body: fs.createReadStream(filepath)
-            }
-        });
-
-        fs.unlinkSync(filepath);
-
-        console.log("Salvo no Drive:", filename);
-
-    } catch (err) {
-        console.log("Erro Drive:", err.message);
-    }
-}
-
-// ================= RECEBER FRAME =================
-app.post('/upload/:cam', async (req, res) => {
+// ================= RECEBE FRAME =================
+app.post('/upload/:cam', (req, res) => {
     const cam = req.params.cam;
 
     if (!frames[cam]) return res.sendStatus(404);
@@ -73,14 +23,6 @@ app.post('/upload/:cam', async (req, res) => {
 
     frames[cam].img = req.body;
     frames[cam].last = Date.now();
-
-    console.log("Frame:", cam, req.body.length);
-
-    const now = Date.now();
-    if (now - lastSave[cam] > SAVE_INTERVAL) {
-        lastSave[cam] = now;
-        uploadToDrive(req.body, cam);
-    }
 
     res.sendStatus(200);
 });
@@ -96,63 +38,160 @@ app.get('/stream/:cam', (req, res) => {
     });
 
     const interval = setInterval(() => {
-        const now = Date.now();
+        const data = frames[cam];
 
-        if (!frames[cam].img || now - frames[cam].last > 10000) {
-            const text = Buffer.from("SEM SINAL");
+        if (!data) return;
+
+        const offline = (Date.now() - data.last) > 10000;
+
+        if (!offline && data.img) {
             res.write(`--frame\r\n`);
-            res.write(`Content-Type: text/plain\r\n\r\n`);
-            res.write(text);
+            res.write(`Content-Type: image/jpeg\r\n\r\n`);
+            res.write(data.img);
             res.write(`\r\n`);
-            return;
         }
-
-        res.write(`--frame\r\n`);
-        res.write(`Content-Type: image/jpeg\r\n\r\n`);
-        res.write(frames[cam].img);
-        res.write(`\r\n`);
-
-    }, 120);
+    }, 100);
 
     req.on('close', () => clearInterval(interval));
+});
+
+// ================= STATUS =================
+app.get('/status/:cam', (req, res) => {
+    const cam = req.params.cam;
+
+    if (!frames[cam]) return res.json({ online: false });
+
+    const offline = (Date.now() - frames[cam].last) > 10000;
+
+    res.json({ online: !offline });
 });
 
 // ================= FRONT =================
 app.get('/', (req, res) => {
     res.send(`
-    <html>
-    <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            body { margin:0; font-family: Arial; background:#111; color:white; }
-            .cam { margin:10px; }
-            img { width:100%; border-radius:10px; }
-        </style>
-    </head>
-    <body>
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body {
+    margin: 0;
+    background: #111;
+    color: white;
+    font-family: Arial;
+}
 
-        <div class="cam">
-            <h2>Camera 1</h2>
-            <img src="/stream/cam1" onclick="openFull('/stream/cam1')">
-        </div>
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+}
 
-        <div class="cam">
-            <h2>Camera 2</h2>
-            <img src="/stream/cam2" onclick="openFull('/stream/cam2')">
-        </div>
+.cam {
+    position: relative;
+}
 
-        <script>
-            function openFull(src){
-                window.open(src, "_blank");
-            }
-        </script>
+img {
+    width: 100%;
+    border-radius: 10px;
+    cursor: pointer;
+}
 
-    </body>
-    </html>
-    `);
+.status {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: red;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+.hidden {
+    display: none;
+}
+
+/* DESKTOP */
+@media(min-width: 800px){
+    .container {
+        flex-direction: row;
+    }
+    .cam {
+        flex: 1;
+    }
+}
+
+/* FULLSCREEN */
+.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: black;
+    z-index: 999;
+}
+
+.fullscreen img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="cam" onclick="expand(this)">
+        <div class="status hidden" id="status_cam1">OFFLINE</div>
+        <img src="/stream/cam1">
+    </div>
+
+    <div class="cam" onclick="expand(this)">
+        <div class="status hidden" id="status_cam2">OFFLINE</div>
+        <img src="/stream/cam2">
+    </div>
+
+</div>
+
+<script>
+function checkStatus(cam){
+    fetch('/status/' + cam)
+    .then(r => r.json())
+    .then(data => {
+        const el = document.getElementById("status_" + cam);
+        if(data.online){
+            el.classList.add("hidden");
+        } else {
+            el.classList.remove("hidden");
+        }
+    });
+}
+
+// verifica a cada 3s
+setInterval(() => {
+    checkStatus("cam1");
+    checkStatus("cam2");
+}, 3000);
+
+// fullscreen toggle
+function expand(el){
+    if(el.classList.contains('fullscreen')){
+        el.classList.remove('fullscreen');
+    } else {
+        el.classList.add('fullscreen');
+    }
+}
+</script>
+
+</body>
+</html>
+`);
 });
 
-// ================= START =================
-app.listen(PORT, () => {
-    console.log("Servidor rodando na porta", PORT);
+app.listen(3000, () => {
+    console.log("Server rodando com 2 cameras");
 });
