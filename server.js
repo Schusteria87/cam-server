@@ -1,7 +1,8 @@
 const express = require('express');
 const app = express();
 
-app.use(express.json({ limit: '5mb' }));
+// Aceitar imagem binária (JPEG direto)
+app.use(express.raw({ type: 'image/jpeg', limit: '5mb' }));
 
 let frames = {
     cam1: null,
@@ -12,12 +13,11 @@ let frames = {
 app.post('/upload/:cam', (req, res) => {
     const cam = req.params.cam;
 
-    if (!req.body.image) {
+    if (!req.body || req.body.length === 0) {
         return res.sendStatus(400);
     }
 
-    const img = Buffer.from(req.body.image, 'base64');
-    frames[cam] = img;
+    frames[cam] = req.body;
 
     res.sendStatus(200);
 });
@@ -40,14 +40,14 @@ app.get('/stream/:cam', (req, res) => {
             res.write(frames[cam]);
             res.write(`\r\n`);
         }
-    }, 100); // 10 FPS tentativa
+    }, 80); // ~12 FPS tentativa
 
     req.on('close', () => {
         clearInterval(interval);
     });
 });
 
-// ================= PÁGINA SIMPLES =================
+// ================= PÁGINA =================
 app.get('/', (req, res) => {
     res.send(`
         <h1>Camera 1</h1>
@@ -58,5 +58,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(3000, () => {
-    console.log("🚀 MJPEG server rodando");
+    console.log("🚀 MJPEG BINARIO rodando");
 });
