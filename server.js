@@ -7,13 +7,9 @@ const { google } = require('googleapis');
 // ================= CONFIG =================
 const PORT = 3000;
 const SAVE_INTERVAL = 5000;
-
 const FOLDER_ID = '1sfUnu5aBtu3U4tF-6gI51GMhyJauYDyn';
 
 // ================= GOOGLE DRIVE =================
-
-const { google } = require('googleapis');
-
 const auth = new google.auth.JWT(
     process.env.GOOGLE_CLIENT_EMAIL,
     null,
@@ -25,6 +21,7 @@ const drive = google.drive({
     version: 'v3',
     auth
 });
+
 // ================= EXPRESS =================
 app.use(express.raw({ type: '*/*', limit: '5mb' }));
 
@@ -82,7 +79,6 @@ app.post('/upload/:cam', async (req, res) => {
 
     console.log("Frame:", cam, req.body.length);
 
-    // salvar controlado
     const now = Date.now();
     if (now - lastSave[cam] > SAVE_INTERVAL) {
         lastSave[cam] = now;
@@ -106,7 +102,6 @@ app.get('/stream/:cam', (req, res) => {
         const now = Date.now();
 
         if (!frames[cam].img || now - frames[cam].last > 10000) {
-            // offline
             const text = Buffer.from("SEM SINAL");
             res.write(`--frame\r\n`);
             res.write(`Content-Type: text/plain\r\n\r\n`);
